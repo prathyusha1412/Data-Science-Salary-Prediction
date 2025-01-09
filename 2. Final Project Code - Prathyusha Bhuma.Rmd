@@ -1,0 +1,998 @@
+---
+title: "Final Project(CDA)"
+output: html_document
+date: "2024-10-07"
+---
+
+```{r setup, include=FALSE}
+library(glmnet)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(stats)
+library(plotly)
+library(caret)
+library(car)
+library(rpart)
+library(randomForest)
+library(Metrics)
+library(ranger)
+library(e1071)
+```
+
+
+
+```{r}
+#Load the Dataset
+DS<-read_csv("/Users/prathyushabhuma/Documents/Florida Polytechnic University/Computation Data Analysis/Data_science_salaries.csv", show_col_types = FALSE)
+```
+
+```{r}
+head(DS)
+dim(DS)
+```
+```{r}
+str(DS)
+```
+```{r}
+
+# To count the number of NA values in each column
+colSums(is.na(DS))
+
+```
+```{r}
+summary(DS)
+```
+
+
+```{r}
+unique_counts <- sapply(DS, n_distinct)
+print(unique_counts)
+```
+
+
+
+```{r}
+# Mean salary by job title
+DS %>%
+  group_by(job_title) %>%
+  summarise(mean_salary = mean(salary_in_usd, na.rm = TRUE))
+
+# Median salary by experience level
+DS%>%
+  group_by(experience_level) %>%
+  summarise(median_salary = median(salary_in_usd, na.rm = TRUE))
+
+```
+
+```{r}
+unique(DS$experience_level)
+unique(DS$employment_type)
+unique(DS$work_models)
+unique(DS$work_year)
+unique(DS$company_size)
+```
+
+```{r}
+DS$experience_level<-as.factor(DS$experience_level)
+DS$employment_type<-as.factor(DS$employment_type)
+DS$work_models<-as.factor(DS$work_models)
+DS$work_year<-as.factor(DS$work_year)
+DS$company_size<-as.factor(DS$company_size)
+str(DS)
+```
+
+```{r}
+# Count the number of duplicated rows in the dataset
+sum(duplicated(DS))
+```
+
+```{r}
+table(DS$job_title)
+```
+
+```{r}
+table(DS$experience_level)
+```
+
+```{r}
+table(DS$employment_type)
+```
+
+```{r}
+table(DS$work_models)
+```
+
+```{r}
+table(DS$work_year)
+```
+
+```{r}
+table(DS$company_size)
+```
+
+```{r}
+
+# Plotting the top 20 most frequent job titles in Data Science
+job_titles <- DS$job_title
+
+# Calculate the frequency of each job title
+title_counts <- job_titles %>%
+  table() %>%
+  as.data.frame()
+
+colnames(title_counts) <- c("Job_Title", "Count")
+
+# Extracting the top 20 most frequent job titles
+top_20_titles <- title_counts %>%
+  arrange(desc(Count)) %>%
+  head(20)
+
+# Plotting the bar plot
+ggplot(top_20_titles, aes(x = Count, y = reorder(Job_Title, Count))) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = Count), hjust = -0.3, color = "black", size = 4) +
+  labs(
+    title = "Top 20 Most Frequent Job Titles",
+    x = "Count",
+    y = "Job Titles"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 10)
+  ) +
+  coord_cartesian(clip = "off", xlim = c(0, max(top_20_titles$Count) * 1.1))
+
+```
+
+
+```{r}
+
+# Create a histogram and boxplot for the salary_in_usd column to understand the distribution and detect any outliers.
+
+# Histogram for salary in USD
+hist(DS$salary_in_usd, 
+     main = "Distribution of Salary", 
+     xlab = "Salary (USD)", 
+     col = "lightblue", 
+     breaks = 30, 
+     xaxt = "n") # Disable default x-axis labels
+
+# Customize x-axis to show full numbers
+axis(1, at = pretty(DS$salary_in_usd), labels = format(pretty(DS$salary_in_usd), big.mark = ",", scientific = FALSE))
+
+```
+
+```{r}
+
+# Boxplot for salary in USD
+boxplot(salary_in_usd ~ experience_level, data = DS, 
+        main = "Salary by Experience Level", 
+        xlab = "Experience Level", 
+        ylab = "Salary (USD)", 
+        col = "lightcoral",
+        yaxt = "n")
+
+
+axis(2, at = pretty(DS$salary_in_usd), 
+     labels = format(pretty(DS$salary_in_usd), big.mark = ",", scientific = FALSE), 
+     las = 2, mgp = c(3, 0, 0))
+
+```
+
+```{r}
+
+# Creating the violin plot for Company Size vs Salary in USD
+ggplot(DS, aes(x = company_size, y = salary_in_usd, fill = company_size)) +
+  geom_violin(trim = FALSE) + # Create the violin plot
+  labs(title = "Salary Distribution by Company Size", 
+       x = "Company Size", 
+       y = "Salary (USD)") +
+  scale_y_continuous(labels = scales::comma)
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        plot.title = element_text(size = 14, hjust = 0.5),
+        legend.position = "none")
+  
+```
+
+```{r}
+
+# Create a new data frame for top locations
+top_locations <- sort(table(DS$employee_residence), decreasing=TRUE)[1:10]
+top_locations_df <- DS %>%
+  filter(employee_residence %in% names(top_locations))
+
+# Create the combined plot
+ggplot(top_locations_df, aes(x = employee_residence, y = salary_in_usd)) +
+  # Boxplot
+  geom_boxplot(width = 0.2, fill = "lightgreen", outlier.colour = "red", outlier.shape = 16, outlier.size = 2) +
+  # Jitter plot for individual points
+  labs(title = "Salary Distribution by Employee Residence (Top 10)", 
+       x = "Employee Residence", 
+       y = "Salary (USD)") +
+  scale_y_continuous(labels = scales::comma) + # Format y-axis labels as full numbers
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis text for better readability
+        plot.title = element_text(hjust = 0.5)) # Center title
+
+```
+
+
+```{r}
+
+# Pie Chart Distribution by the Experience Level
+level_counts <- table(DS$experience_level)
+
+custom_colors <- c("lightyellow", "lightgreen", "lightblue", "lightcoral")
+
+# Create a pie chart
+pie(level_counts, 
+    labels = paste(names(level_counts), "(", level_counts, ")", sep = ""), 
+    main = "Experience Level Distribution in Data Science",
+    col = custom_colors)
+
+```
+
+
+
+```{r}
+
+# Cross-tabulation of the company size and experience levels
+cross_tab <- table(DS$experience_level, DS$company_size)
+
+# Convert the cross-tabulation into a data frame for ggplot2
+cross_tab_df <- as.data.frame(cross_tab)
+colnames(cross_tab_df) <- c("Experience_Level", "Company_Size", "Count")
+
+# Create the heatmap using ggplot2
+ggplot(cross_tab_df, aes(x = Company_Size, y = Experience_Level, fill = Count)) +
+  geom_tile() +
+  geom_text(aes(label = Count), color = "black", size = 4) +
+  scale_fill_gradient(low = "#DCFFF1", high = "#1F845A") +
+  labs(
+    x = "Company Size",
+    y = "Experience Level",
+    title = "Relationship between Experience Level and Company Size"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+```{r}
+
+# Let's analyze the Top 10 most frequent job salaries for the analysis
+
+data <- DS %>% 
+  filter(job_title %in% c('Data Engineer', 'Data Scientist', 'Data Analyst', 'Machine Learning Engineer', 
+                          'Analytics Engineer', 'Research Scientist', 'Data Architect', 'Research Engineer', 
+                          'ML Engineer', 'Applied Scientist'))
+
+job_title_counts <- table(data$job_title)
+job_title_counts
+
+```
+
+
+
+```{r}
+
+data <- data %>%
+  select(-work_year, -salary_currency, -salary)
+
+data
+
+```
+
+
+
+```{r}
+
+# Altering the employee residence and company location dataset to form a new data feature for including it in the analysis
+
+data <- data %>%
+  mutate(same_working_country = ifelse(employee_residence == company_location, 
+                                       'Local Worker', 
+                                       'Non Native'))
+
+# Dropping the 'employee_residence' and 'company_location' columns
+data <- data %>%
+  select(-employee_residence, -company_location)
+
+same_working_country_counts <- table(data$same_working_country)
+
+rownames(data) <- NULL
+
+data
+
+```
+
+```{r}
+
+str(data)
+
+```
+
+```{r}
+
+data$same_working_country<-as.factor(data$same_working_country)
+str(data)
+
+```
+
+
+
+```{r}
+
+# Examining the target variable salary_in_usd
+
+dataset <- data
+
+dataset$log_salary_in_usd <- log(dataset$salary_in_usd)
+
+hist(dataset$log_salary_in_usd, breaks = 30, main = "Histogram of Log-transformed salary_in_usd", xlab = "log(salary_in_usd)")
+
+skewness_log <- skewness(dataset$log_salary_in_usd)
+cat("Skewness after log transformation:", skewness_log, "\n")
+
+```
+
+
+```{r}
+
+# Splitting the data into Train & Test
+
+trainPart <- createDataPartition(dataset$salary_in_usd, p = 0.7, list = FALSE)
+train_data <- dataset[trainPart, ]
+test_data <- dataset[-trainPart, ]
+
+x_train_data <- model.matrix(salary_in_usd ~ ., train_data)[, -1]
+y_train_data  <- train_data$salary_in_usd
+x_test_data  <- model.matrix(salary_in_usd ~ ., test_data)[, -1]
+y_test_data  <- test_data$salary_in_usd
+
+```
+
+
+
+```{r}
+
+# 1. Linear Regression
+
+# Fit the linear regression model
+lm_model <- lm(salary_in_usd ~ ., data = train_data)
+summary(lm_model)
+
+# Predictions on the test set
+lm_preds_test <- predict(lm_model, newdata = test_data)
+
+# Predictions on the training set
+lm_preds_train <- predict(lm_model, newdata = train_data)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- length(coef(lm_model)) - 1
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+train_metrics <- calculate_metrics(train_data$salary_in_usd, lm_preds_train)
+cat("Training Metrics:\n")
+print(train_metrics)
+
+# Calculate metrics for test set
+test_metrics <- calculate_metrics(test_data$salary_in_usd, lm_preds_test)
+cat("\nTesting Metrics:\n")
+print(test_metrics)
+
+```
+
+
+
+```{r}
+
+# 2. Ridge Regression
+
+# Fit Ridge regression model with cross-validation
+ridge_model <- cv.glmnet(x_train_data, y_train_data, alpha = 0)
+
+# Optimal lambda for Ridge regression
+ridge_lambda <- ridge_model$lambda.min
+cat("Optimal Lambda for Ridge Regression:", ridge_lambda, "\n")
+
+# Predictions on the training set
+ridge_preds_train <- predict(ridge_model, newx = x_train_data, s = ridge_lambda)
+
+# Predictions on the test set
+ridge_preds_test <- predict(ridge_model, newx = x_test_data, s = ridge_lambda)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_train_data)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+ridge_train_metrics <- calculate_metrics(y_train_data, ridge_preds_train)
+cat("Ridge Regression - Training Metrics:\n")
+print(ridge_train_metrics)
+
+# Calculate metrics for test set
+ridge_test_metrics <- calculate_metrics(y_test_data, ridge_preds_test)
+cat("\nRidge Regression - Testing Metrics:\n")
+print(ridge_test_metrics)
+
+# Extract Ridge coefficients for interpretation
+ridge_coefs <- coef(ridge_model, s = ridge_lambda)
+cat("\nRidge Coefficients:\n")
+print(ridge_coefs)
+
+```
+
+
+
+```{r}
+
+# 3. Lasso Regression
+
+# Fit Lasso regression model with cross-validation
+lasso_model <- cv.glmnet(x_train_data, y_train_data, alpha = 1)
+
+# Optimal lambda for Lasso regression
+lasso_lambda <- lasso_model$lambda.min
+cat("Optimal Lambda for Lasso Regression:", lasso_lambda, "\n")
+
+# Predictions on the training set
+lasso_preds_train <- predict(lasso_model, newx = x_train_data, s = lasso_lambda)
+
+# Predictions on the test set
+lasso_preds_test <- predict(lasso_model, newx = x_test_data, s = lasso_lambda)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_train_data)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+lasso_train_metrics <- calculate_metrics(y_train_data, lasso_preds_train)
+cat("Lasso Regression - Training Metrics:\n")
+print(lasso_train_metrics)
+
+# Calculate metrics for test set
+lasso_test_metrics <- calculate_metrics(y_test_data, lasso_preds_test)
+cat("\nLasso Regression - Testing Metrics:\n")
+print(lasso_test_metrics)
+
+# Extract Lasso coefficients for interpretation
+lasso_coefs <- coef(lasso_model, s = lasso_lambda)
+cat("\nLasso Coefficients:\n")
+print(lasso_coefs)
+
+```
+
+
+
+```{r}
+
+# 4. Decision Tree Regression
+
+# Train Decision Tree model
+decision_tree <- rpart(
+  salary_in_usd ~ ., 
+  data = train_data, 
+  method = "anova", 
+  control = rpart.control(maxdepth = 2, minsplit = 10)
+)
+
+# Predictions on the training set
+dt_preds_train <- predict(decision_tree, train_data)
+
+# Predictions on the test set
+dt_preds_test <- predict(decision_tree, test_data)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred, n, p) {
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Number of observations and predictors for train and test
+n_train <- nrow(train_data)
+n_test <- nrow(test_data)
+p <- ncol(x_train_data)
+
+# Calculate metrics for training set
+dt_train_metrics <- calculate_metrics(y_train_data, dt_preds_train, n_train, p)
+cat("Decision Tree Regression - Training Metrics:\n")
+print(dt_train_metrics)
+
+# Calculate metrics for test set
+dt_test_metrics <- calculate_metrics(y_test_data, dt_preds_test, n_test, p)
+cat("\nDecision Tree Regression - Testing Metrics:\n")
+print(dt_test_metrics)
+
+```
+
+
+
+```{r}
+
+# 5. kNN Regression
+
+# Standardize the data
+preproc <- preProcess(train_data[, -ncol(train_data)], method = c("center", "scale"))
+x_train_scaled <- predict(preproc, train_data[, -ncol(train_data)])
+x_test_scaled <- predict(preproc, test_data[, -ncol(test_data)])
+
+# Train KNN Model with Cross-Validation
+knn_model <- train(
+  salary_in_usd ~ ., 
+  data = train_data, 
+  method = "knn", 
+  trControl = trainControl(method = "cv"),
+  tuneGrid = expand.grid(k = seq(10, 25, 3)), 
+  preProcess = c("center", "scale"),
+  metric = "RMSE"
+)
+
+# Optimal K Value
+optimal_k <- knn_model$bestTune$k
+cat("Optimal K for kNN Regression:", optimal_k, "\n")
+
+# Predictions on the training set
+knn_preds_train <- predict(knn_model, newdata = train_data)
+
+# Predictions on the test set
+knn_preds_test <- predict(knn_model, newdata = test_data)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_train_scaled)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate Metrics for Training Set
+knn_train_metrics <- calculate_metrics(train_data$salary_in_usd, knn_preds_train)
+cat("kNN Regression - Training Metrics:\n")
+print(knn_train_metrics)
+
+# Calculate Metrics for Test Set
+knn_test_metrics <- calculate_metrics(test_data$salary_in_usd, knn_preds_test)
+cat("\nkNN Regression - Testing Metrics:\n")
+print(knn_test_metrics)
+
+# Display the kNN Model Summary
+cat("\nkNN Model Summary:\n")
+print(knn_model)
+
+```
+
+
+
+```{r}
+
+# 6. Random Forest Regression
+
+# Transforming categorical variables into dummy variables for training and testing sets
+dummy_model <- dummyVars("~ .", data = train_data)
+train_transformed <- data.frame(predict(dummy_model, newdata = train_data))
+test_transformed <- data.frame(predict(dummy_model, newdata = test_data))
+
+# Add the target variable back to the training data
+train_transformed$salary_in_usd <- train_data$salary_in_usd
+
+# Fit Random Forest model
+random_forest <- randomForest(salary_in_usd ~ ., 
+                              data = train_transformed, 
+                              ntree = 1500, 
+                              mtry = floor(sqrt(ncol(train_transformed) - 1)),
+                              importance = TRUE)
+
+# Predictions on the training set
+rf_preds_train <- predict(random_forest, train_transformed)
+
+# Predictions on the test set
+rf_preds_test <- predict(random_forest, test_transformed)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred, x_data) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_data)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+rf_train_metrics <- calculate_metrics(train_data$salary_in_usd, rf_preds_train, train_transformed)
+cat("Random Forest Regression - Training Metrics:\n")
+print(rf_train_metrics)
+
+# Calculate metrics for test set
+rf_test_metrics <- calculate_metrics(y_test_data, rf_preds_test, test_transformed)
+cat("\nRandom Forest Regression - Testing Metrics:\n")
+print(rf_test_metrics)
+
+```
+
+```{r}
+
+# 7. Dimensionality Reduction - PCA on Best Model - Random Forest Regression
+
+# Perform PCA
+pca_model <- prcomp(train_transformed[, -ncol(train_transformed)], scale. = TRUE)
+explained_variance <- cumsum(pca_model$sdev^2 / sum(pca_model$sdev^2))
+selected_components <- which(explained_variance >= 0.9)[1]
+
+# Get the principal components
+train_pca <- predict(pca_model, newdata = train_transformed[, -ncol(train_transformed)])[, 1:selected_components]
+test_pca <- predict(pca_model, newdata = test_transformed[, -ncol(test_transformed)])[, 1:selected_components]
+
+# Combine the principal components with the target variable
+train_pca <- data.frame(train_pca, salary_in_usd = train_transformed$salary_in_usd)
+test_pca <- data.frame(test_pca, salary_in_usd = test_transformed$salary_in_usd)
+
+# Fit Random Forest with PCA components
+rf_pca <- randomForest(salary_in_usd ~ ., data = train_pca, ntree = 500, mtry = sqrt(ncol(train_pca) - 1))
+
+# Predict on the training data
+rf_pca_train_preds <- predict(rf_pca, train_pca)
+
+# Predict on the test data
+rf_pca_test_preds <- predict(rf_pca, test_pca)
+
+# Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred, x_data) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_data) - 1
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for Random Forest with PCA on training set
+rf_pca_train_metrics <- calculate_metrics(train_pca$salary_in_usd, rf_pca_train_preds, train_pca)
+cat("\nRandom Forest with PCA - Training Metrics:\n")
+print(rf_pca_train_metrics)
+
+# Calculate metrics for Random Forest with PCA on test set
+rf_pca_test_metrics <- calculate_metrics(test_pca$salary_in_usd, rf_pca_test_preds, test_pca)
+cat("Random Forest with PCA - Test Metrics:\n")
+print(rf_pca_test_metrics)
+
+```
+
+
+
+```{r}
+  
+# 8. K-Means Clustering integration with Random Forest Regression
+
+# Custom K-Means prediction function
+predict.kmeans <- function(kmeans_model, newdata) {
+  if (!is.matrix(newdata)) {
+    newdata <- as.matrix(newdata)
+  }
+  centers <- kmeans_model$centers
+  distances <- apply(newdata, 1, function(row) {
+    apply(centers, 1, function(center) sqrt(sum((row - center)^2)))
+  })
+  apply(distances, 2, which.min)
+}
+
+# Scaling the training and test data
+scaling_params <- preProcess(x_train_data, method = c("center", "scale"))
+x_train_scaled <- predict(scaling_params, x_train_data)
+x_test_scaled <- predict(scaling_params, x_test_data)
+
+# Performing K-Means clustering
+kmeans_model <- kmeans(x_train_scaled, centers = 25, nstart = 10)
+
+# Assigning the cluster labels
+cluster_labels_train <- kmeans_model$cluster
+cluster_labels_test <- predict.kmeans(kmeans_model, x_test_scaled)
+
+# Combine the cluster labels with the scaled data for both training and test data
+x_train_augmented <- cbind(x_train_scaled, cluster = as.factor(cluster_labels_train))
+x_test_augmented <- cbind(x_test_scaled, cluster = as.factor(cluster_labels_test))
+
+# Pre-processing the augmented data
+preProc <- preProcess(x_train_augmented, method = c("medianImpute"))
+x_train_augmented <- predict(preProc, newdata = x_train_augmented)
+x_test_augmented <- predict(preProc, newdata = x_test_augmented)
+
+# Random Forest Regression with the augmented dataset
+rf_model <- randomForest(
+  y = y_train_data, 
+  x = x_train_augmented, 
+  ntree = 1000,
+  mtry = floor(sqrt(ncol(x_train_augmented)))
+)
+
+# Predicting on the training data
+y_pred_rf_train <- predict(rf_model, newdata = x_train_augmented)
+
+# Predicting on the test data
+y_pred_rf_test <- predict(rf_model, newdata = x_test_augmented)
+
+# Model Evaluation Metrics Calculation Function
+calculate_metrics <- function(y_true, y_pred, x_train) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- ncol(x_train)
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+rf_train_metrics <- calculate_metrics(y_train_data, y_pred_rf_train, x_train_augmented)
+cat("Random Forest with K-Means Clustering - Training Metrics:\n")
+print(rf_train_metrics)
+
+# Calculate metrics for test set
+rf_test_metrics <- calculate_metrics(y_test_data, y_pred_rf_test, x_train_augmented)
+cat("\nRandom Forest with K-Means Clustering - Testing Metrics:\n")
+print(rf_test_metrics)
+
+```
+
+
+
+```{r}
+
+# 9. Hierarchical Clustering integration with the Best Model - Random Forest Regression
+
+# Scale the data
+train_scaled <- scale(train_transformed[, -ncol(train_transformed)])
+test_scaled <- scale(test_transformed[, -ncol(test_transformed)], center = attr(train_scaled, "scaled:center"), 
+                     scale = attr(train_scaled, "scaled:scale"))
+
+# Perform Hierarchical Clustering
+d <- dist(train_scaled, method = "euclidean")
+hc <- hclust(d, method = "ward.D2")
+
+k <- 5
+cluster_labels_train <- cutree(hc, k = k)
+
+# Add cluster labels to the training data
+train_augmented <- cbind(train_scaled, cluster = factor(cluster_labels_train))
+train_augmented <- data.frame(train_augmented, salary_in_usd = train_transformed$salary_in_usd)
+
+# Calculate cluster centroids for the training set
+cluster_centroids <- aggregate(train_scaled, by = list(cluster_labels_train), FUN = mean)
+
+# Assign clusters to the test set based on the closest centroid
+cluster_labels_test <- apply(test_scaled, 1, function(row) {
+  which.min(apply(cluster_centroids[, -1], 1, function(centroid) sum((row - centroid)^2)))
+})
+
+# Add cluster labels to the test data
+test_augmented <- cbind(test_scaled, cluster = factor(cluster_labels_test))
+test_augmented <- data.frame(test_augmented, salary_in_usd = test_transformed$salary_in_usd)
+
+# Fit Random Forest with augmented training data
+rf_model <- randomForest(
+  salary_in_usd ~ ., 
+  data = train_augmented, 
+  ntree = 500, 
+  mtry = floor(sqrt(ncol(train_augmented) - 1)), 
+  importance = TRUE
+)
+
+# Predict on augmented training data
+y_pred_rf_augmented_train <- predict(rf_model, newdata = train_augmented)
+
+# Predict on augmented test data
+y_pred_rf_augmented_test <- predict(rf_model, newdata = test_augmented)
+
+# Evaluation Metrics Function
+calculate_metrics <- function(y_true, y_pred, model) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- length(coef(model)) - 1
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+rf_train_metrics <- calculate_metrics(train_augmented$salary_in_usd, y_pred_rf_augmented_train, rf_model)
+cat("Random Forest with Hierarchical Clustering - Training Metrics:\n")
+print(rf_train_metrics)
+
+# Calculate metrics for test set
+rf_test_metrics <- calculate_metrics(test_augmented$salary_in_usd, y_pred_rf_augmented_test, rf_model)
+cat("\nRandom Forest with Hierarchical Clustering - Test Metrics:\n")
+print(rf_test_metrics)
+
+```
+
+
+
+```{r}
+
+# 10. Hyper Parameter Tuning
+
+# Hyperparameter Tuning for PCA and Random Forest
+
+# Perform PCA and select components
+pca_model <- prcomp(train_transformed[, -ncol(train_transformed)], scale. = TRUE)
+explained_variance <- cumsum(pca_model$sdev^2 / sum(pca_model$sdev^2))
+selected_components <- which(explained_variance >= 0.9)[1]
+
+# Get the reduced principal components
+train_pca <- predict(pca_model, newdata = train_transformed[, -ncol(train_transformed)])[, 1:selected_components]
+test_pca <- predict(pca_model, newdata = test_transformed[, -ncol(test_transformed)])[, 1:selected_components]
+
+# Combine PCA components with the target variable
+train_pca <- data.frame(train_pca, salary_in_usd = train_transformed$salary_in_usd)
+test_pca <- data.frame(test_pca, salary_in_usd = test_transformed$salary_in_usd)
+
+# Define features and data
+n_features <- ncol(train_pca) - 1
+ames_train <- train_pca
+
+# Create hyperparameter grid for Random Forest
+hyper_grid <- expand.grid(
+  mtry = floor(n_features * c(0.05, 0.10, 0.25, 0.333, 0.4)),
+  min.node.size = c(1, 3, 5, 10),
+  replace = c(TRUE, FALSE),
+  sample.fraction = c(0.5, 0.63, 0.8),
+  rmse = NA
+)
+
+default_rmse <- 100
+
+for (i in seq_len(nrow(hyper_grid))) {
+  fit <- ranger(
+    formula = salary_in_usd ~ .,
+    data = ames_train,
+    num.trees = n_features * 10,
+    mtry = hyper_grid$mtry[i],
+    min.node.size = hyper_grid$min.node.size[i],
+    replace = hyper_grid$replace[i],
+    sample.fraction = hyper_grid$sample.fraction[i],
+    verbose = FALSE,
+    respect.unordered.factors = "order"
+  )
+  
+  hyper_grid$rmse[i] <- sqrt(fit$prediction.error)
+}
+
+# Assess top 10 models based on RMSE
+top_models <- hyper_grid %>%
+  arrange(rmse) %>%
+  mutate(perc_gain = (default_rmse - rmse) / default_rmse * 100) %>%
+  head(10)
+
+# Print top 10 models
+print(top_models)
+
+# Fit the Random Forest model using the best hyperparameters found
+best_hyperparams <- top_models[1, ]
+best_rf <- ranger(
+  formula = salary_in_usd ~ .,
+  data = train_pca,
+  num.trees = n_features * 10,
+  mtry = best_hyperparams$mtry,
+  min.node.size = best_hyperparams$min.node.size,
+  replace = best_hyperparams$replace,
+  sample.fraction = best_hyperparams$sample.fraction,
+  importance = "impurity"
+)
+
+# Predict on training data
+rf_preds_train <- predict(best_rf, train_pca)$predictions
+
+# Predict on test data
+rf_preds_test <- predict(best_rf, test_pca)$predictions
+
+# Evaluation Metrics Function
+calculate_metrics <- function(y_true, y_pred, model) {
+  n <- length(y_true)
+  mse <- mean((y_true - y_pred)^2)
+  rmse <- sqrt(mse)
+  mae <- mean(abs(y_true - y_pred))
+  ss_total <- sum((y_true - mean(y_true))^2)
+  ss_residual <- sum((y_true - y_pred)^2)
+  r2 <- 1 - (ss_residual / ss_total)
+  p <- length(coef(model)) - 1
+  adj_r2 <- 1 - (1 - r2) * (n - 1) / (n - p - 1)
+  rase <- sqrt(ss_residual / ss_total)
+  
+  return(list(MSE = mse, RMSE = rmse, MAE = mae, R2 = r2, Adjusted_R2 = adj_r2, RASE = rase))
+}
+
+# Calculate metrics for training set
+rf_train_metrics <- calculate_metrics(train_pca$salary_in_usd, rf_preds_train, best_rf)
+cat("Random Forest with PCA - Training Metrics:\n")
+print(rf_train_metrics)
+
+# Calculate metrics for test set
+rf_test_metrics <- calculate_metrics(test_pca$salary_in_usd, rf_preds_test, best_rf)
+cat("\nRandom Forest with PCA - Test Metrics:\n")
+print(rf_test_metrics)
+
+```
